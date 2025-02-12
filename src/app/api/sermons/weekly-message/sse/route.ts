@@ -21,7 +21,10 @@ export async function GET(req: NextRequest) {
           // Function to send sermon data
           const sendSermon = async () => {
             try {
-              const weeklyMessage = await Sermon.findOne({ isWeeklyMessage: true })
+              const weeklyMessage = await Sermon.findOne({ 
+                isWeeklyMessage: true,
+                weeklyMessageExpiry: { $gt: new Date() }
+              })
                 .select('-__v')
                 .lean();
               

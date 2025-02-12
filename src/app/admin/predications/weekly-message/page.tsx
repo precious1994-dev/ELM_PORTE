@@ -44,6 +44,8 @@ export default function WeeklyMessagePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalSermons, setTotalSermons] = useState(0);
   const [error, setError] = useState<string>('');
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const retryCountRef = useRef<number>(0);
 
   const fetchSermons = async (page: number) => {
     try {
@@ -138,34 +140,63 @@ export default function WeeklyMessagePage() {
     };
 
     fetchInitialData();
-    
-    // Setup SSE
-    const cleanup = setupSSE({
-      endpoint: '/api/sermons/weekly-message/sse',
-      onMessage: (data) => {
-        if (!isSubscribed) return;
 
+    // Setup SSE with retry logic
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 5000;
+
+    const setupEventSource = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      eventSourceRef.current = new EventSource('/api/sermons/weekly-message/sse');
+      eventSourceRef.current.onerror = handleSSEError;
+      eventSourceRef.current.onmessage = handleMessage;
+      eventSourceRef.current.onopen = handleOpen;
+    };
+
+    const handleSSEError = () => {
+      if (!isSubscribed) return;
+      
+      console.error('SSE Connection Error');
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++;
+        const delay = RETRY_DELAY * Math.pow(2, retryCountRef.current - 1);
+        console.log(`Retrying connection in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+        
+        setTimeout(() => {
+          if (isSubscribed) {
+            setupEventSource();
+          }
+        }, delay);
+      } else {
+        console.error('Max retry attempts reached');
+        toast.error('La connexion temps réel est indisponible. Veuillez rafraîchir la page.');
+      }
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      if (!isSubscribed) return;
+      
+      try {
+        const data = JSON.parse(event.data);
         if (data === null) {
           setCurrentWeeklyMessage(null);
           return;
         }
 
-        const isValidWeeklyMessage = (obj: unknown): obj is Sermon => {
+        const isValidWeeklyMessage = (obj: any) => {
           return (
             obj !== null &&
             typeof obj === 'object' &&
             '_id' in obj &&
             typeof obj._id === 'string' &&
             'title' in obj &&
-            typeof obj.title === 'string' &&
-            'speaker' in obj &&
-            typeof obj.speaker === 'string' &&
-            'date' in obj &&
-            typeof obj.date === 'string' &&
-            'description' in obj &&
-            typeof obj.description === 'string' &&
-            'youtubeUrl' in obj &&
-            typeof obj.youtubeUrl === 'string'
+            typeof obj.title === 'string'
           );
         };
 
@@ -175,21 +206,28 @@ export default function WeeklyMessagePage() {
         }
 
         setCurrentWeeklyMessage(data);
-      },
-      onError: (error) => {
-        if (!isSubscribed) return;
-        console.error('SSE Error:', error);
-        toast.error('La connexion temps réel est indisponible');
-      },
-      onConnected: () => {
-        if (!isSubscribed) return;
-        console.log('SSE Connected successfully');
+        retryCountRef.current = 0; // Reset retry count on successful message
+      } catch (error) {
+        console.error('Error parsing SSE message:', error);
       }
-    });
+    };
 
+    const handleOpen = () => {
+      if (!isSubscribed) return;
+      console.log('SSE Connected successfully');
+      retryCountRef.current = 0; // Reset retry count on successful connection
+    };
+
+    // Initial setup
+    setupEventSource();
+
+    // Cleanup function
     return () => {
       isSubscribed = false;
-      cleanup();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     };
   }, [currentPage, status]);
 
