@@ -10,14 +10,6 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Non autorisé' },
-        { status: 401 }
-      );
-    }
-
     await dbConnect();
     const { id } = await context.params;
     const sermon = await Sermon.findById(id);

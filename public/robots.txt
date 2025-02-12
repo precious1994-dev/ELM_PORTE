@@ -10,7 +10,7 @@ Disallow: /404
 Disallow: /500
 
 # Host
-Host: https://your-domain.com
+Host: https://elm-porte.vercel.app
 
 # Sitemaps
-Sitemap: https://your-domain.com/sitemap.xml
+Sitemap: https://elm-porte.vercel.app/sitemap.xml
